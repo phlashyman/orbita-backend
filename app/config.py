@@ -20,6 +20,10 @@ class Settings(BaseSettings):
 
     # AI
     anthropic_api_key: str = ""
+    ai_daily_cap_usd: float = 5.0
+
+    # SerpAPI
+    serpapi_key: str = ""
 
     # S3 / MinIO
     s3_endpoint: str = "http://localhost:9000"
@@ -27,6 +31,15 @@ class Settings(BaseSettings):
     s3_secret_key: str = "minioadmin"
     s3_bucket: str = "orbita-receipts"
     s3_region: str = "us-east-1"
+
+    # CORS
+    cors_origins: str = "http://localhost:3000"
+
+    # Railway / Production
+    railway_environment: str = ""
+
+    # Sentry
+    sentry_dsn: str = ""
 
     @property
     def database_url_sync(self) -> str:

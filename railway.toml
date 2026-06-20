@@ -1,0 +1,21 @@
+# Orbita — Railway deployment configuration
+# https://docs.railway.com/
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
+numReplicas = 1
+
+[service]
+name = "orbita-backend"
+
+[service.healthcheck]
+path = "/health"
+timeout = 10
+interval = 30
+
+# Environment variables are managed via Railway dashboard UI
+# Do NOT store secrets here
