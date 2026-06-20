@@ -50,6 +50,7 @@ async def resolve_tax_rates(
         select(TaxRule)
         .where(TaxRule.is_active == True)
         .where(TaxRule.instrument_class == instrument_class)
+        .where(TaxRule.bodiva_admitted == bodiva_admitted)
         .where(TaxRule.valid_from <= pay_date)
         .where(
             or_(TaxRule.valid_to >= pay_date, TaxRule.valid_to.is_(None))
@@ -59,10 +60,6 @@ async def resolve_tax_rates(
 
     result = await db.execute(query)
     rules: list[TaxRule] = list(result.scalars().all())
-
-    # Filter by bodiva_admitted (model field)
-    # Currently TaxRule always stores bodiva_admitted=True for relevant rules
-    # In production, we would add the filter to the query
 
     if not rules:
         return {
