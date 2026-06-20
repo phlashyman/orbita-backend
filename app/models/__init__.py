@@ -19,6 +19,21 @@ from app.models.bodiva_market import (
     YieldCurveHistory, IncomeEvent, BodivaMonthlyAggregate, BodivaQuarterlyAggregate,
 )
 
+# === NOVOS MODELS DE INVESTIMENTO (Sprint 3) ===
+from app.models.investor_profile import InvestorProfile
+from app.models.portfolio_analytics import PortfolioAnalytics
+from app.models.scenario_analysis import ScenarioAnalysis
+from app.models.scenario_definition import ScenarioDefinition
+from app.models.investment_signal import InvestmentSignal
+from app.models.investment_goal import InvestmentGoal
+from app.models.ai_assistant_log import AIAssistantLog
+from app.models.educational_content_view import EducationalContentView
+from app.models.currency_pair import CurrencyPair
+from app.models.international_position import InternationalPosition
+from app.models.market_comparison import MarketComparison
+from app.models.country_risk_metric import CountryRiskMetric
+from app.models.tax_rule import TaxRule
+
 __all__ = [
     "Family",
     "User",
@@ -43,4 +58,18 @@ __all__ = [
     "IncomeEvent",
     "BodivaMonthlyAggregate",
     "BodivaQuarterlyAggregate",
+    # Novos modelos de investimento
+    "InvestorProfile",
+    "PortfolioAnalytics",
+    "ScenarioAnalysis",
+    "ScenarioDefinition",
+    "InvestmentSignal",
+    "InvestmentGoal",
+    "AIAssistantLog",
+    "EducationalContentView",
+    "CurrencyPair",
+    "InternationalPosition",
+    "MarketComparison",
+    "CountryRiskMetric",
+    "TaxRule",
 ]

@@ -21,6 +21,13 @@ from app.routers import (
     broker_files_router,
     market_data_router,
     watchlist_router,
+    # Novos routers de investimento (Sprint 3)
+    investor_router,
+    goals_router,
+    scenarios_router,
+    signals_router,
+    international_router,
+    tax_router,
 )
 
 
@@ -40,18 +47,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow the deployed frontend + Cloudflare tunnel origins
-# The JWT token is sent via Authorization header (not cookies),
-# so allow_credentials can be False, which works with wildcard origins.
+# CORS — allow deployed frontend origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,  # Must be False for wildcard origins to work
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Routers
+# === Routers base (portados do Kimi) ===
 app.include_router(auth_router)
 app.include_router(bank_accounts_router)
 app.include_router(budget_router)
@@ -63,6 +68,14 @@ app.include_router(portfolio_router)
 app.include_router(broker_files_router)
 app.include_router(market_data_router)
 app.include_router(watchlist_router)
+
+# === Novos routers de investimento ===
+app.include_router(investor_router)
+app.include_router(goals_router)
+app.include_router(scenarios_router)
+app.include_router(signals_router)
+app.include_router(international_router)
+app.include_router(tax_router)
 
 
 @app.get("/health", tags=["Health"])

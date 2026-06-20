@@ -13,6 +13,16 @@ from app.routers.broker_files import router as broker_files_router
 from app.routers.market_data import router as market_data_router
 from app.routers.watchlist import router as watchlist_router
 
+# Novos routers de investimento (Sprint 3)
+from app.routers.investment import (
+    investor_router,
+    goals_router,
+    scenarios_router,
+    signals_router,
+    international_router,
+    tax_router,
+)
+
 __all__ = [
     "auth_router",
     "bank_accounts_router",
@@ -25,4 +35,10 @@ __all__ = [
     "broker_files_router",
     "market_data_router",
     "watchlist_router",
+    "investor_router",
+    "goals_router",
+    "scenarios_router",
+    "signals_router",
+    "international_router",
+    "tax_router",
 ]
