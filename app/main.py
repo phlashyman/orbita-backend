@@ -168,14 +168,48 @@ async def health_check_full():
         status["checks"]["database"] = "ok"
     except Exception as e:
         status["checks"]["database"] = f"error: {str(e)[:100]}"
+        status["status"] = "degraded"
     if settings.anthropic_api_key:
         status["checks"]["ai_key"] = "configured"
     if settings.serpapi_key:
         status["checks"]["serpapi_key"] = "configured"
-    all_ok = all(v in ("ok", "configured") for v in status["checks"].values())
-    if not all_ok:
-        status["status"] = "degraded"
     return status
+
+
+@app.get("/health/db", tags=["Health"])
+async def health_check_db():
+    """Database-only health check. Returns full connection detail for debugging."""
+    import os
+    raw = os.environ.get("DATABASE_URL", "NOT SET")
+    # Mask password
+    masked = raw
+    if "@" in masked:
+        parts = masked.split("@")
+        host_part = parts[1] if len(parts) > 1 else ""
+        user_part = parts[0].split("://")[1] if "://" in parts[0] else "???"
+        if ":" in user_part:
+            user_part = user_part.split(":")[0] + ":****"
+        masked = parts[0].split("://")[0] + "://" + user_part + "@" + host_part
+
+    try:
+        from app.database import engine
+        async with engine.connect() as conn:
+            result = await conn.exec_driver_sql("SELECT 1")
+            row = result.scalar()
+        if row == 1:
+            return {
+                "database": "CONNECTED",
+                "url_masked": masked,
+                "tables_created": "auto (lifespan)",
+                "using": settings.database_url.split("://")[0] if "://" in settings.database_url else "unknown",
+            }
+    except Exception as e:
+        return {
+            "database": "ERROR",
+            "url_masked": masked,
+            "using": settings.database_url.split("://")[0] if "://" in settings.database_url else "unknown",
+            "error": str(e)[:200],
+        }
 
 
 @app.get("/", tags=["Root"])

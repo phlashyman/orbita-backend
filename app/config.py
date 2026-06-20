@@ -2,14 +2,13 @@
 Orbita configuration — loaded from environment variables.
 Uses pydantic-settings for type-safe config management.
 
-On Railway, DATABASE_URL is injected by the PostgreSQL service in the format:
-  postgresql://postgres:<pass>@<host>:5432/railway
-We automatically convert it to the asyncpg-compatible format:
-  postgresql+asyncpg://postgres:<pass>@<host>:5432/railway
+On Railway, DATABASE_URL is injected by PostgreSQL as:
+  postgresql://user:pass@host:5432/railway
+We auto-convert to asyncpg format:
+  postgresql+asyncpg://user:pass@host:5432/railway
 """
-import os
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
 
 
 class Settings(BaseSettings):
@@ -18,17 +17,16 @@ class Settings(BaseSettings):
     app_name: str = "Orbita API"
     debug: bool = True
 
-    # Database — auto-fixed for asyncpg on Railway
+    # Database
     database_url: str = "postgresql+asyncpg://orbita:orbita_secret@localhost:5432/orbita"
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Railway injects DATABASE_URL as postgresql://... — we need postgresql+asyncpg://
-        raw = os.environ.get("DATABASE_URL", "")
-        if raw and "postgresql://" in raw and "+asyncpg" not in raw:
-            fixed = raw.replace("postgresql://", "postgresql+asyncpg://", 1)
-            os.environ["DATABASE_URL"] = fixed
-            self.database_url = fixed
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def fix_asyncpg(cls, v: str) -> str:
+        """Auto-convert postgresql:// to postgresql+asyncpg:// for asyncpg driver."""
+        if v and "postgresql://" in v and "+asyncpg" not in v:
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
 
     # Security
     secret_key: str = "orbita-super-secret-key-change-in-production"
