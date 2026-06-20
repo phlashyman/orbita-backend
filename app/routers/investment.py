@@ -50,6 +50,23 @@ from app.services.investor_profile import (
     get_quiz_questions as get_questions_service,
     generate_ips_text,
 )
+from app.services.ai_assistant import (
+    generate_portfolio_insight,
+    generate_weekly_report_template,
+    can_generate_content,
+    log_ai_usage,
+    check_daily_cap,
+    estimate_cost,
+    MODEL_TIERS,
+)
+from app.services.investment_education import (
+    get_glossary,
+    get_explanation,
+    get_tooltip,
+    get_popular_terms,
+    calc_simple_ytm,
+    calc_iac_impact,
+)
 
 router = APIRouter(tags=["Investimento"])
 
@@ -204,6 +221,142 @@ async def dca_vs_lump_simulation(
 ):
     """Compara DCA (investimento periodico) vs Lump Sum (investimento unico)."""
     return simulate_dca_vs_lump_sum(total_amount, time_horizon_years, expected_return, volatility, num_installments)
+
+
+# ===========================================================================
+# 2b. AI ASSISTANT
+# ===========================================================================
+ai_router = APIRouter(prefix="/ai", tags=["AI Assistant"])
+
+from app.models.ai_assistant_log import AIFeature
+
+
+@ai_router.get("/model-tiers", summary="Tiers de modelos disponiveis")
+async def get_model_tiers():
+    return MODEL_TIERS
+
+
+@ai_router.get("/daily-cap", summary="Verificar daily cap AI")
+async def get_daily_cap(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    feature: str = "PORTFOLIO_ANALYSIS",
+):
+    try:
+        f = AIFeature(feature)
+    except ValueError:
+        f = AIFeature.PORTFOLIO_ANALYSIS
+    return await check_daily_cap(db, f)
+
+
+@ai_router.post("/portfolio-insight", summary="Gerar insight do portfolio")
+async def portfolio_insight(
+    portfolio_value: float = Query(...),
+    total_invested: float = Query(...),
+    weighted_real_yield: Optional[float] = Query(None),
+    n_holdings: int = Query(0),
+    top_ticker: Optional[str] = Query(None),
+):
+    insight = generate_portfolio_insight(
+        portfolio_value, total_invested, weighted_real_yield,
+        n_holdings, top_ticker,
+    )
+    return {"insight": insight, "type": "rule_based"}
+
+
+@ai_router.get("/weekly-report", summary="Template de relatorio semanal")
+async def weekly_report_template(
+    portfolio_name: str = Query("Minha Carteira"),
+    portfolio_value: float = Query(0),
+    performance_pct: Optional[float] = Query(None),
+    n_signals: int = Query(0),
+    next_payment_date: Optional[str] = Query(None),
+    next_payment_amount: Optional[float] = Query(None),
+):
+    report = generate_weekly_report_template(
+        portfolio_name, portfolio_value, performance_pct,
+        n_signals, next_payment_date, next_payment_amount,
+    )
+    return {"report": report, "type": "template"}
+
+
+@ai_router.post("/log-usage", summary="Registar utilizacao AI")
+async def log_ai_usage_endpoint(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    data: Dict[str, Any],
+):
+    log = await log_ai_usage(
+        db,
+        user_id=str(current_user.id),
+        family_id=str(current_user.family_id),
+        feature=AIFeature(data.get("feature", "CHAT")),
+        model=data.get("model", "unknown"),
+        tokens_input=data.get("tokens_input", 0),
+        tokens_output=data.get("tokens_output", 0),
+        cost_usd=data.get("cost_usd", 0),
+        user_message=data.get("user_message"),
+        response_excerpt=data.get("response_excerpt"),
+        duration_ms=data.get("duration_ms", 0),
+        error=data.get("error"),
+        was_capped=data.get("was_capped", False),
+    )
+    return {"logged": True, "log_id": str(log.id)}
+
+
+# ===========================================================================
+# 2c. ORBITA ACADEMY
+# ===========================================================================
+academy_router = APIRouter(prefix="/academy", tags=["Orbita Academy"])
+
+
+@academy_router.get("/glossary", summary="Glossario financeiro")
+async def glossary(
+    search: Optional[str] = Query(None, description="Pesquisar por termo"),
+    level: Optional[str] = Query(None, description="beginner / intermediate / advanced"),
+):
+    return {"terms": get_glossary(search, level), "total": len(get_glossary(search, level))}
+
+
+@academy_router.get("/glossary/{concept}", summary="Explicacao de um conceito")
+async def explain_concept(
+    concept: str,
+    level: str = Query("beginner", description="beginner / intermediate / advanced"),
+):
+    result = get_explanation(concept, level)
+    if not result:
+        raise HTTPException(status_code=404, detail="Conceito nao encontrado")
+    return result
+
+
+@academy_router.get("/tooltip/{metric}", summary="Tooltip para metrica do dashboard")
+async def tooltip(metric: str):
+    result = get_tooltip(metric)
+    if not result:
+        raise HTTPException(status_code=404, detail="Tooltip nao encontrado para esta metrica")
+    return result
+
+
+@academy_router.get("/popular", summary="Termos populares do glossario")
+async def popular_terms():
+    return {"terms": get_popular_terms()}
+
+
+@academy_router.post("/calculator/ytm", summary="Calculadora simplificada de YTM")
+async def calc_ytm_simple(
+    current_price: float = Query(..., description="Preco atual do titulo"),
+    par_value: float = Query(100000, description="Valor nominal"),
+    coupon_rate: float = Query(0.195, description="Taxa de cupao (decimal)"),
+    years_to_maturity: float = Query(3, description="Anos ate ao vencimento"),
+):
+    return calc_simple_ytm(current_price, par_value, coupon_rate, years_to_maturity)
+
+
+@academy_router.post("/calculator/iac", summary="Calculadora de impacto do IAC e inflacao")
+async def calc_iac(
+    gross_return: float = Query(0.195, description="Retorno bruto (decimal)"),
+):
+    return calc_iac_impact(gross_return)
 
 
 # ===========================================================================

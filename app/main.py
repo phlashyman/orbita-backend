@@ -29,6 +29,8 @@ from app.routers import (
     signals_router,
     international_router,
     tax_router,
+    ai_router,
+    academy_router,
 )
 
 
@@ -74,6 +76,8 @@ app.include_router(watchlist_router)
 app.include_router(investor_router)
 app.include_router(goals_router)
 app.include_router(strategies_router)
+app.include_router(ai_router)
+app.include_router(academy_router)
 app.include_router(scenarios_router)
 app.include_router(signals_router)
 app.include_router(international_router)

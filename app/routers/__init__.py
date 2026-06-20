@@ -22,6 +22,8 @@ from app.routers.investment import (
     international_router,
     tax_router,
     strategies_router,
+    ai_router,
+    academy_router,
 )
 
 __all__ = [
@@ -43,4 +45,6 @@ __all__ = [
     "international_router",
     "tax_router",
     "strategies_router",
+    "ai_router",
+    "academy_router",
 ]
