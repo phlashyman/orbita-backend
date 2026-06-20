@@ -148,19 +148,19 @@ app.include_router(tax_router)
 # ---------------------------------------------------------------------------
 @app.get("/health", tags=["Health"])
 async def health_check():
-    """Enhanced health check — verifies DB + AI + SerpAPI key presence."""
+    """Fast health check for Railway post-deploy — always returns 200."""
+    return {"status": "ok", "app": settings.app_name, "version": "1.0.0"}
+
+
+@app.get("/health/full", tags=["Health"])
+async def health_check_full():
+    """Full health check — verifies DB + AI + SerpAPI key presence."""
     status = {
         "status": "healthy",
         "app": settings.app_name,
         "version": "1.0.0",
-        "checks": {
-            "database": "unchecked",
-            "ai_key": "missing",
-            "serpapi_key": "missing",
-        },
+        "checks": {"database": "unchecked", "ai_key": "missing", "serpapi_key": "missing"},
     }
-
-    # Check database connectivity
     try:
         from app.database import engine
         async with engine.connect() as conn:
@@ -168,20 +168,13 @@ async def health_check():
         status["checks"]["database"] = "ok"
     except Exception as e:
         status["checks"]["database"] = f"error: {str(e)[:100]}"
-
-    # Check API keys
     if settings.anthropic_api_key:
         status["checks"]["ai_key"] = "configured"
-    if hasattr(settings, "serpapi_key") and settings.serpapi_key:
+    if settings.serpapi_key:
         status["checks"]["serpapi_key"] = "configured"
-
-    overall = all(
-        v == "ok" or v == "configured"
-        for v in status["checks"].values()
-    )
-    if not overall:
+    all_ok = all(v in ("ok", "configured") for v in status["checks"].values())
+    if not all_ok:
         status["status"] = "degraded"
-
     return status
 
 
