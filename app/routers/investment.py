@@ -150,7 +150,64 @@ async def get_ips(
 
 
 # ===========================================================================
-# 2. OBJECTIVOS FINANCEIROS
+# 2. ESTRATEGIAS DE INVESTIMENTO
+# ===========================================================================
+strategies_router = APIRouter(prefix="/strategies", tags=["Estrategias"])
+
+from app.services.investment_strategies import (
+    suggest_strategies,
+    compare_strategies,
+    simulate_dca_vs_lump_sum,
+    STRATEGY_DESCRIPTIONS,
+)
+
+
+@strategies_router.get("/descriptions", summary="Descricoes das estrategias disponiveis")
+async def get_strategy_descriptions():
+    """Devolve as descricoes de todas as estrategias de yield curve."""
+    return STRATEGY_DESCRIPTIONS
+
+
+@strategies_router.get("/suggest", summary="Sugerir estrategias para o perfil")
+async def get_suggestions(
+    profile: str = Query("MODERADO", description="Perfil: CONSERVADOR, MODERADO, DINAMICO, AGRESSIVO"),
+    yield_curve_slope: Optional[float] = Query(None, description="Declive da curva (10yr-2yr) em %"),
+    volatility_regime: Optional[str] = Query(None, description="low / normal / high"),
+):
+    """Sugere estrategias ordenadas por score para o perfil e condicoes de mercado."""
+    suggestions = suggest_strategies(profile, yield_curve_slope, volatility_regime)
+    return {
+        "profile": profile,
+        "yield_curve_slope": yield_curve_slope,
+        "volatility_regime": volatility_regime,
+        "suggestions": suggestions,
+    }
+
+
+@strategies_router.post("/compare", summary="Comparar estrategias de yield curve")
+async def compare(
+    portfolio_value: float = Query(..., description="Valor total do portfolio (AOA)"),
+    average_yield: float = Query(0.195, description="Yield medio atual (decimal, ex: 0.195 = 19.5%)"),
+    time_horizon_years: int = Query(5, description="Horizonte de investimento em anos"),
+):
+    """Compara a projecao financeira das estrategias Bullet, Barbell, Ladder e Riding the Curve."""
+    return compare_strategies(portfolio_value, average_yield, time_horizon_years)
+
+
+@strategies_router.post("/dca-vs-lump", summary="Simular DCA vs Lump Sum")
+async def dca_vs_lump_simulation(
+    total_amount: float = Query(..., description="Montante total a investir (AOA)"),
+    time_horizon_years: int = Query(5, description="Horizonte em anos"),
+    expected_return: float = Query(0.195, description="Retorno anual esperado (decimal)"),
+    volatility: float = Query(0.0, description="Volatilidade anual (decimal, 0 = deterministico)"),
+    num_installments: int = Query(12, description="Prestacoes DCA por ano"),
+):
+    """Compara DCA (investimento periodico) vs Lump Sum (investimento unico)."""
+    return simulate_dca_vs_lump_sum(total_amount, time_horizon_years, expected_return, volatility, num_installments)
+
+
+# ===========================================================================
+# 3. OBJECTIVOS FINANCEIROS
 # ===========================================================================
 goals_router = APIRouter(prefix="/goals", tags=["Objectivos"])
 

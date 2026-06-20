@@ -21,9 +21,10 @@ from app.routers import (
     broker_files_router,
     market_data_router,
     watchlist_router,
-    # Novos routers de investimento (Sprint 3)
+    # Novos routers de investimento
     investor_router,
     goals_router,
+    strategies_router,
     scenarios_router,
     signals_router,
     international_router,
@@ -72,6 +73,7 @@ app.include_router(watchlist_router)
 # === Novos routers de investimento ===
 app.include_router(investor_router)
 app.include_router(goals_router)
+app.include_router(strategies_router)
 app.include_router(scenarios_router)
 app.include_router(signals_router)
 app.include_router(international_router)
