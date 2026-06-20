@@ -5,7 +5,7 @@ posições internacionais, taxas de câmbio, métricas de risco país e regras f
 Estes são os endpoints que os motores de investimento (Sprints 4-5, 8-10) vão consumir.
 """
 from datetime import date, datetime, timedelta
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, desc, func
@@ -346,6 +346,68 @@ async def add_international_position(
     await db.commit()
     await db.refresh(pos)
     return InternationalPositionRead.model_validate(pos)
+
+
+@international_router.get("/suggest", summary="Sugestao de alocacao internacional")
+async def get_international_suggest(
+    risk_profile: str = Query("MODERADO", description="Perfil: CONSERVADOR, MODERADO, DINAMICO, AGRESSIVO"),
+    include_gold: bool = Query(True),
+):
+    from app.services.international_markets import suggest_international_split
+    return suggest_international_split(risk_profile, include_gold)
+
+
+@international_router.post("/currency-impact", summary="Impacto cambial nas posicoes internacionais")
+async def currency_impact_simulation(
+    data: Dict[str, Any],
+):
+    positions = data.get("positions", [])
+    scenario = data.get("scenario", "kwanza_depreciation_10")
+    from app.services.international_markets import portfolio_currency_impact
+    return portfolio_currency_impact(positions, scenario)
+
+
+@international_router.post("/compare-markets", summary="Comparador historico de mercados")
+async def market_comparison(
+    initial_investment: float = Query(1000000, description="Montante inicial em AOA"),
+    years: int = Query(5, description="Periodo em anos"),
+    inflation_rate: float = Query(0.1242, description="Taxa de inflacao (decimal)"),
+):
+    from app.services.international_markets import compare_markets
+    return compare_markets(
+        initial_investment=initial_investment,
+        years=years,
+        inflation_rate=inflation_rate,
+    )
+
+
+@international_router.post("/optimize", summary="Markowitz: alocacao internacional otima")
+async def optimize_international(
+    asset_classes: List[str] = Query(
+        ["US_EQUITY", "SA_EQUITY", "EU_EQUITY", "GOLD"],
+        description="Classes de ativos internacionais para optimizar",
+    ),
+    target_return: Optional[float] = Query(None, description="Retorno alvo (decimal), None=max Sharpe"),
+    risk_free_rate: float = Query(0.04, description="Taxa livre de risco (decimal)"),
+):
+    from app.services.international_markets import mean_variance_optimization
+    return mean_variance_optimization(asset_classes, target_return, risk_free_rate)
+
+
+@international_router.post("/kelly-split", summary="Kelly Criterion: fracao por mercado internacional")
+async def kelly_split(
+    data: Dict[str, Any],
+):
+    markets = data.get("markets", [])
+    fractional = data.get("fractional", 0.25)
+    from app.services.international_markets import kelly_international_split
+    return kelly_international_split(markets, fractional)
+
+
+@international_router.get("/emerging-vs-developed", summary="Analise mercados emergentes vs desenvolvidos")
+async def emerging_vs_developed():
+    from app.services.international_markets import emerging_vs_developed_analysis
+    return emerging_vs_developed_analysis()
 
 
 @international_router.get("/currency-pairs", summary="Taxas de câmbio actuais")
