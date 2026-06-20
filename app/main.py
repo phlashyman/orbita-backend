@@ -35,13 +35,27 @@ from app.routers import (
 )
 
 
+import logging
+
+logger = logging.getLogger("orbita")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan: create tables on startup."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Application lifespan: try to create tables on startup, resilient to missing DB."""
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables verified/created successfully.")
+    except Exception as e:
+        logger.warning(f"Could not connect to database on startup: {e}")
+        logger.warning("The API will start, but DB-dependent endpoints will return 503.")
+        logger.warning("Check DATABASE_URL env var and ensure PostgreSQL is running.")
     yield
-    await engine.dispose()
+    try:
+        await engine.dispose()
+    except Exception:
+        pass
 
 
 app = FastAPI(
