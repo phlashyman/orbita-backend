@@ -45,6 +45,11 @@ from app.schemas.investment import (
     TaxRuleCreate,
     TaxRuleRead,
 )
+from app.services.investor_profile import (
+    calculate_profile,
+    get_quiz_questions as get_questions_service,
+    generate_ips_text,
+)
 
 router = APIRouter(tags=["Investimento"])
 
@@ -55,201 +60,10 @@ router = APIRouter(tags=["Investimento"])
 investor_router = APIRouter(prefix="/investor-profile", tags=["Perfil Investidor"])
 
 
-@investor_router.get("/questions", summary="Obter perguntas do questionário")
+@investor_router.get("/questions", summary="Obter perguntas do questionario")
 async def get_quiz_questions(mode: QuizMode = QuizMode.RAPIDO):
-    """
-    Devolve as perguntas do questionário psicométrico adaptado ao contexto angolano.
-    - RAPIDO: 6 perguntas (3 dimensões) — para beginners
-    - COMPLETO: 10 perguntas (5 dimensões) — intermédios/avançados
-    """
-    # Perguntas base (modo rápido)
-    questions = [
-        {
-            "id": 1,
-            "dimensao": "Tolerância ao Risco",
-            "pergunta": "Se investisses 1.000.000 AOA e o teu portfolio caísse 10% num mês (para 900.000 AOA), o que farias?",
-            "opcoes": [
-                {"valor": 1, "label": "Vendia tudo para não perder mais"},
-                {"valor": 2, "label": "Vendia metade, muito preocupado"},
-                {"valor": 3, "label": "Mantinha, acreditando que recupera"},
-                {"valor": 4, "label": "Comprava mais, é oportunidade"},
-                {"valor": 5, "label": "Comprava mais com alavancagem"},
-            ],
-        },
-        {
-            "id": 2,
-            "dimensao": "Tolerância ao Risco",
-            "pergunta": "Preferes um investimento que...",
-            "opcoes": [
-                {"valor": 1, "label": "Garanta o capital mas renda abaixo da inflação (ex: Depósito a Prazo)"},
-                {"valor": 2, "label": "Tenha 90% chance de ganhar 5% e 10% de perder 2%"},
-                {"valor": 3, "label": "Tenha 70% chance de ganhar 10% e 30% de perder 5%"},
-                {"valor": 4, "label": "Tenha 50% chance de ganhar 25% e 50% de perder 10%"},
-                {"valor": 5, "label": "Tenha 30% chance de ganhar 50% e 70% de perder 20%"},
-            ],
-        },
-        {
-            "id": 3,
-            "dimensao": "Horizonte Temporal",
-            "pergunta": "Quando precisas do dinheiro que vais investir?",
-            "opcoes": [
-                {"valor": 1, "label": "Menos de 1 ano"},
-                {"valor": 2, "label": "1-3 anos"},
-                {"valor": 3, "label": "3-5 anos"},
-                {"valor": 4, "label": "5-10 anos"},
-                {"valor": 5, "label": "Mais de 10 anos"},
-            ],
-        },
-        {
-            "id": 4,
-            "dimensao": "Horizonte Temporal",
-            "pergunta": "Se o teu investimento perdesse valor nos primeiros 2 anos, esperarias quanto tempo para recuperar?",
-            "opcoes": [
-                {"valor": 1, "label": "Vendo ao fim de 6 meses"},
-                {"valor": 2, "label": "Vendo ao fim de 1 ano"},
-                {"valor": 3, "label": "Aguardo 2-3 anos"},
-                {"valor": 4, "label": "Aguardo 4-5 anos"},
-                {"valor": 5, "label": "Aguardo 5+ anos, confiante na estratégia"},
-            ],
-        },
-        {
-            "id": 5,
-            "dimensao": "Situação Financeira",
-            "pergunta": "Tens poupanças equivalentes a quantos meses de despesas?",
-            "opcoes": [
-                {"valor": 1, "label": "Menos de 1 mês"},
-                {"valor": 2, "label": "1-3 meses"},
-                {"valor": 3, "label": "3-6 meses"},
-                {"valor": 4, "label": "6-12 meses"},
-                {"valor": 5, "label": "Mais de 12 meses"},
-            ],
-        },
-        {
-            "id": 6,
-            "dimensao": "Conhecimento",
-            "pergunta": "Como descreves o teu conhecimento sobre investimentos?",
-            "opcoes": [
-                {"valor": 1, "label": "Nenhum — é a minha primeira vez"},
-                {"valor": 2, "label": "Básico — sei o que são OT e acções"},
-                {"valor": 3, "label": "Intermédio — entendo YTM, Duration, diversificação"},
-                {"valor": 4, "label": "Avançado — uso VaR, Sharpe, análises técnicas"},
-                {"valor": 5, "label": "Profissional — trabalho na área financeira"},
-            ],
-        },
-    ]
-
-    # Perguntas adicionais para o modo completo
-    if mode == QuizMode.COMPLETO:
-        questions.extend([
-            {
-                "id": 7,
-                "dimensao": "Objectivos",
-                "pergunta": "Qual é o teu principal objectivo com este investimento?",
-                "opcoes": [
-                    {"valor": 1, "label": "Preservar capital, sem risco de perda"},
-                    {"valor": 2, "label": "Gerar rendimento regular (ex: complementar salário)"},
-                    {"valor": 3, "label": "Crescimento moderado acima da inflação"},
-                    {"valor": 4, "label": "Acumular para um objectivo grande (casa, educação)"},
-                    {"valor": 5, "label": "Crescimento máximo de longo prazo"},
-                ],
-            },
-            {
-                "id": 8,
-                "dimensao": "Objectivos",
-                "pergunta": "Que retorno anual esperas (em AOA) após impostos e inflação?",
-                "opcoes": [
-                    {"valor": 1, "label": "0-2% (acima da inflação / preservar)"},
-                    {"valor": 2, "label": "2-5% (acima da inflação / rendimento)"},
-                    {"valor": 3, "label": "5-10% (crescimento moderado)"},
-                    {"valor": 4, "label": "10-15% (crescimento agressivo)"},
-                    {"valor": 5, "label": "15%+ (máximo retorno)"},
-                ],
-            },
-            {
-                "id": 9,
-                "dimensao": "Contexto Angolano",
-                "pergunta": "O kwanza desvalorizou 30% face ao USD no último ano. O que fazes?",
-                "opcoes": [
-                    {"valor": 1, "label": "Fico só em AOA, o governo vai estabilizar"},
-                    {"valor": 2, "label": "Passo 10% para USD ou EUR"},
-                    {"valor": 3, "label": "Passo 25% para USD ou EUR"},
-                    {"valor": 4, "label": "Passo 50% para acções internacionais"},
-                    {"valor": 5, "label": "Passo 80% para fora de Angola"},
-                ],
-            },
-            {
-                "id": 10,
-                "dimensao": "Contexto Angolano",
-                "pergunta": "Qual a percentagem do teu património total que este investimento representa?",
-                "opcoes": [
-                    {"valor": 1, "label": "Mais de 75% do meu património"},
-                    {"valor": 2, "label": "50-75% do meu património"},
-                    {"valor": 3, "label": "25-50% do meu património"},
-                    {"valor": 4, "label": "10-25% do meu património"},
-                    {"valor": 5, "label": "Menos de 10% do meu património"},
-                ],
-            },
-        ])
-
-    return {"mode": mode, "questions": questions, "total": len(questions)}
-
-
-def _calculate_profile(respostas: list[QuizAnswer]) -> dict:
-    """Calcula perfil e alocação a partir das respostas."""
-    scores = {r.pergunta_id: r.score for r in respostas}
-
-    # Agrupar por dimensão
-    if len(respostas) <= 6:
-        # Modo rápido: 3 dimensões
-        tolerancia = (scores.get(1, 3) + scores.get(2, 3)) / 2
-        horizonte = (scores.get(3, 3) + scores.get(4, 3)) / 2
-        capacidade = (scores.get(5, 3) + scores.get(6, 3)) / 2
-        media = (tolerancia + horizonte + capacidade) / 3
-    else:
-        # Modo completo: 5 dimensões com pesos CFA
-        tolerancia = (scores.get(1, 3) + scores.get(2, 3)) / 2
-        horizonte = (scores.get(3, 3) + scores.get(4, 3)) / 2
-        objectivos = (scores.get(7, 3) + scores.get(8, 3)) / 2
-        capacidade = (scores.get(5, 3) + scores.get(10, 3)) / 2
-        conhecimento = float(scores.get(6, 3))
-        media = (tolerancia * 0.35 + horizonte * 0.20 + objectivos * 0.20 + capacidade * 0.15 + conhecimento * 0.10)
-
-    # Mapear score para perfil
-    if media <= 2.0:
-        perfil = InvestorRiskProfile.CONSERVADOR
-        alocacao = {
-            "ot_bodiva": 0.50, "bt": 0.20, "accao_nacional": 0.00,
-            "usd_equities": 0.10, "jse": 0.00, "europe_bonds": 0.10,
-            "gold": 0.00, "emerging": 0.00, "imobiliario": 0.10,
-        }
-    elif media <= 3.0:
-        perfil = InvestorRiskProfile.MODERADO
-        alocacao = {
-            "ot_bodiva": 0.35, "bt": 0.10, "accao_nacional": 0.05,
-            "usd_equities": 0.15, "jse": 0.10, "europe_bonds": 0.10,
-            "gold": 0.05, "emerging": 0.10, "imobiliario": 0.05,
-        }
-    elif media <= 4.0:
-        perfil = InvestorRiskProfile.DINAMICO
-        alocacao = {
-            "ot_bodiva": 0.20, "bt": 0.05, "accao_nacional": 0.10,
-            "usd_equities": 0.25, "jse": 0.10, "europe_bonds": 0.05,
-            "gold": 0.05, "emerging": 0.10, "imobiliario": 0.05,
-        }
-    else:
-        perfil = InvestorRiskProfile.AGRESSIVO
-        alocacao = {
-            "ot_bodiva": 0.10, "bt": 0.00, "accao_nacional": 0.15,
-            "usd_equities": 0.30, "jse": 0.15, "europe_bonds": 0.05,
-            "gold": 0.10, "emerging": 0.10, "imobiliario": 0.00,
-        }
-
-    return {
-        "perfil": perfil,
-        "score_total": round(media, 2),
-        "alocacao": alocacao,
-        "estrategias": ["buy_and_hold", "rebalanceamento_semestral"],
-    }
+    """Devolve as perguntas do questionario psicometrico adaptado ao contexto angolano."""
+    return get_questions_service(mode)
 
 
 @investor_router.post("/submit", summary="Submeter respostas e obter perfil")
@@ -258,15 +72,21 @@ async def submit_quiz(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Processa o questionário e devolve o perfil de investidor."""
-    result = _calculate_profile(data.respostas)
+    """Processa o questionario e devolve o perfil de investidor."""
+    result = calculate_profile(data.respostas)
     respostas_json = [r.model_dump() for r in data.respostas]
+    mode = QuizMode.COMPLETO if len(data.respostas) > 6 else QuizMode.RAPIDO
 
     profile = InvestorProfile(
         user_id=current_user.id,
-        mode=data.mode,
+        mode=mode,
         perfil=result["perfil"],
         score_total=result["score_total"],
+        tolerancia_risco=result["scores_by_dimension"].get("tolerancia_risco"),
+        horizonte_temporal=result["scores_by_dimension"].get("horizonte_temporal"),
+        objectivos_retorno=result["scores_by_dimension"].get("objectivos_retorno"),
+        capacidade_financeira=result["scores_by_dimension"].get("capacidade_financeira"),
+        conhecimento=result["scores_by_dimension"].get("conhecimento"),
         alocacao_sugerida=result["alocacao"],
         respostas=respostas_json,
         recommended_strategies=result["estrategias"],
@@ -280,6 +100,7 @@ async def submit_quiz(
         "profile_id": str(profile.id),
         "perfil": result["perfil"].value,
         "score_total": result["score_total"],
+        "profile_description": result["profile_description"],
         "alocacao_sugerida": result["alocacao"],
         "estrategias": result["estrategias"],
         "message": "PERFIL_DEFINIDO",
@@ -300,8 +121,32 @@ async def get_my_profile(
     )
     profile = result.scalar_one_or_none()
     if not profile:
-        raise HTTPException(status_code=404, detail="Perfil não encontrado — responde ao questionário primeiro.")
+        raise HTTPException(status_code=404, detail="Perfil nao encontrado - responde ao questionario primeiro.")
     return InvestorProfileRead.model_validate(profile)
+
+
+@investor_router.get("/ips", summary="Gerar IPS do meu perfil")
+async def get_ips(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Gera o Investment Policy Statement (IPS) em formato texto."""
+    result = await db.execute(
+        select(InvestorProfile)
+        .where(InvestorProfile.user_id == current_user.id)
+        .order_by(desc(InvestorProfile.created_at))
+        .limit(1)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Perfil nao encontrado - responde ao questionario primeiro.")
+
+    ips_text = generate_ips_text(profile, current_user.name)
+    return {
+        "profile_id": str(profile.id),
+        "ips": ips_text,
+        "generated_at": datetime.utcnow().isoformat(),
+    }
 
 
 # ===========================================================================
