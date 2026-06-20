@@ -1,57 +1,45 @@
-## Handoff — Sprint 5 concluido → Sprint 6
+## Handoff — Sprints 6+7 concluidos → Sprint 8
 
-**Modelo:** Claude Opus 4.8 (🔵)
+**Modelo:** DeepSeek (🟢)
+**Proximo:** Claude Opus 4.8 (🔵) — Sprint 8: risk_manager + scenario_engine
 **Data:** 2026-06-20
 
 ---
 
-### Sprint 4 + 5 — Motores Financeiros (Claude)
+### O que foi feito
 
-| Sprint | Ficheiros | Linhas |
-|--------|-----------|--------|
-| Sprint 4 | `financial_core.py` (319), `tax_engine.py` (117), `cashflow_engine.py` (245) | 681 |
-| Sprint 5 | `portfolio_analytics.py` (563) | 563 |
+**Sprint 6 — `app/services/investor_profile.py` (DeepSeek)**
+- `get_quiz_questions()` — 6 perguntas rapido / 10 completo
+- `calculate_profile()` — scoring com pesos CFA
+- `generate_ips_text()` — IPS markdown com 7 seccoes
+- 4 perfis com alocacao internacional (20-65%)
+- Endpoints: /questions, /submit, /my-profile, /ips
 
-**Todas as funcoes verificadas com 12+ testes cada.**
+**Sprint 7 — `app/services/investment_strategies.py` (DeepSeek)**
+- `suggest_strategies()` — scoring por perfil + curva + volatilidade
+- `compare_strategies()` — Bullet vs Barbell vs Ladder vs Riding Curve
+- `simulate_dca_vs_lump_sum()` — DCA mensal vs lump sum
+- Endpoints: /descriptions, /suggest, /compare, /dca-vs-lump
 
----
+### Proximo Sprint — Sprint 8 (Claude 🔵)
 
-### RESUMO PARA O PROXIMO SPRINT
+**Ficheiros a criar:**
+1. `app/services/risk_manager.py`:
+   - `calc_var_historic()`, `calc_var_parametric()` — ja existe em portfolio_analytics, reutilizar
+   - `stress_test()` — aplicar cenario macro ao portfolio
+   - `run_scenario_analysis()` — correr todos os cenarios predefinidos
+   - `generate_early_warnings()` — verificar regras contra metricas actuais
+   - `liquidity_analysis()` — profundidade bid/ask, tempo liquidacao
+   - `concentration_report()` — HHI, Gini, breakdown por issuer/class/maturidade
 
-**Proximo:** Sprint 6 (DeepSeek 🟢)
-**Conteudo:** investor_profile.py (questionario 2 modos) + router
-**Sprint 7:** investment_strategies.py (Bullet/Barbell/Ladder/DCA)
-
-**Fundacoes prontas que o DeepSeek vai usar:**
-- `app/services/financial_core.py` — YTM, duration, fisher_real, solve_ytm, generate_cash_flows
-- `app/services/tax_engine.py` — resolve_tax_rates(), get_active_iac_rate()
-- `app/services/cashflow_engine.py` — bond_coupon_schedule(), portfolio_cashflows(), next_payment()
-- `app/services/portfolio_analytics.py` — calculate_all_metrics(), todos os calcs puros
-- `app/models/investor_profile.py` — modelo ja criado (Sprint 3)
-- `app/schemas/investment.py` — schemas ja criados (Sprint 3)
-- `app/routers/investment.py` — router base ja criado (Sprint 3)
-
-**O Sprint 6 precisa de:**
-1. Criar `app/services/investor_profile.py` — logica do questionario (6Q rapido / 10Q completo)
-   - Scoring algorithm com pesos CFA
-   - `_calculate_profile()` — ja existe logica no router
-   - `generate_ips()` — placeholder para geracao PDF
-2. Melhorar endpoint `/investor-profile/submit` — usar o novo service
-3. Adicionar endpoint `/investor-profile/ips` — gerar IPS
-
-**O Sprint 7 precisa de:**
-1. Criar `app/services/investment_strategies.py`
-   - `suggest_strategies()` — Bullet/Barbell/Ladder baseado no perfil
-   - `bullet_vs_barbell_vs_ladder()` — comparador
-   - `dca_vs_lump_sum_simulation()` — simulador DCA vs Lump Sum
-2. Router `/strategies/` endpoints
+2. `app/services/scenario_engine.py`:
+   - `monte_carlo_simulation(n_paths=1000)` — simplicado (sem GARCH)
+   - `define_scenario(name, params)` — cenario personalizado
+   - `prebuilt_scenarios()` — 4 cenarios Angola-specific
+   - `sensitivity_matrix()` — impacto de variacoes de YTM
+   - `tornado_chart_data()` — factores mais impactantes
 
 **Problemas pendentes:**
-1. PostgreSQL nao esta a correr localmente — migracoes Alembic nao executadas
-2. .env tem chaves API vazias
-3. GitHub repos criados e funcionais: https://github.com/phlashyman/orbita-backend e orbita-frontend
-
-**Instrucoes para o Joao:**
-1. `/model deepseek-chat` para mudar para DeepSeek
-2. Dizer "Sprint 6" ao DeepSeek
-3. O DeepSeek deve ler este HANDOFF.md primeiro
+1. PostgreSQL nao corre localmente — Docker Desktop precisa de estar activo
+2. .env com chaves vazias (ANTHROPIC_API_KEY, SERPAPI_KEY)
+3. GitHub: https://github.com/phlashyman/orbita-backend (8 commits)
