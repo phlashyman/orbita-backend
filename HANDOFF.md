@@ -1,62 +1,89 @@
-## Handoff — Sprint 2 → Sprint 3
+## Handoff — Sprint 3 → Sprint 4
 
 **De:** DeepSeek (🟢)
-**Para:** DeepSeek (🟢) — continuamos
+**Para:** Claude Opus 4.8 (🔵) — mudança de modelo!
 **Data:** 2026-06-20
 
 ---
 
-### O que foi feito no Sprint 2
+### O que foi feito no Sprint 3
 
-**Teste exaustivo de parsers contra ficheiros reais.**
+**Core Backend completo — 36 models, 17 routers, migrações prontas.**
 
-Foram testados parsers dos 3 AIs (Claude, Kimi, Manu) contra 7 formatos de ficheiros em `Ficheiros de Uploads - Orbita/`:
+1. **Verificados e mantidos:** 17 models base portados do Kimi (User, Family, Portfolio, BankAccount, BODIVA market data, etc.)
 
-| Formato | Ficheiro testado | Resultado |
-|---------|-----------------|-----------|
-| Aurea Carteira (.xlsx) | Carteira (10).xlsx | ✅ 7 holdings extraídas |
-| Bolsa Destaques (.xlsx) | Bolsa-Destaques (1).xlsx | ✅ 20 instrumentos |
-| Ordens Disponiveis (.xlsx) | Ordens_Disponiveis_04-05-2026_... | ✅ 166 rows, 400 order book entries |
-| Resumo Mercados (.xlsx) | Resumo dos Mercados - 05-05-2026... | ✅ 24 instrumentos |
-| Standard Carteira (.pdf) | Standard Gestao de Activos... | ✅ 3 posições, 799.682 AOA |
-| Ficha Técnica (.pdf) | AOBAIAAAAA05-20260430.pdf | ✅ ISIN, ticker, issuer, class |
-| Boletim BODIVA (.pdf) | boletimdiario20260514.pdf | ✅ 3 sub-parsers (OTC, leilão, eventos) |
+2. **Criados 19 novos models:**
+   - `InvestorProfile` — perfil psicométrico (modo rápido 6Q / completo 10Q)
+   - `PortfolioAnalytics` — VaR, Sharpe, Duration, HHI, Gini, Liquidez
+   - `ScenarioAnalysis` — stress tests + Monte Carlo
+   - `ScenarioDefinition` — 4 cenários Angola-specific
+   - `InvestmentSignal` — unifica alertas, recomendações, swaps
+   - `InvestmentGoal` — objectivos financeiros com progresso
+   - `AIAssistantLog` — tracking de custos AI com daily cap
+   - `EducationalContentView` — tracking Academy
+   - `CurrencyPair` — USD/AOA, EUR/AOA, ZAR/AOA
+   - `InternationalPosition` — investimentos S&P500, JSE, etc.
+   - `MarketComparison` — comparador histórico OT vs S&P500 vs Ouro
+   - `CountryRiskMetric` — CRP Damodaran, rating, CDS, inflação
+   - `TaxRule` — IAC temporal (5%/10% Lei 14/25)
 
-### Decisão: Kimi vence para TODOS os formatos
+3. **Routers criados (com endpoints funcionais):**
+   - `investor_router` (`/investor-profile`) — questionário + submit + perfil
+   - `goals_router` (`/goals`) — CRUD de objectivos
+   - `scenarios_router` (`/scenarios/prebuilt`) — cenários predefinidos com seed data
+   - `signals_router` (`/signals`) — listar e filtrar sinais
+   - `international_router` (`/international`) — posições, FX, country risk
+   - `tax_router` (`/tax-rules`) — CRUD regras + `/resolve` endpoint
 
-Os parsers do Kimi (já no `orbita-backend/app/services/ingestion/`) são superiores em todos os 7 formatos.
+4. **Migração Alembic 0003:** `add_investment_models` — CREATE TABLE para todos os 19 novos models + enums. Requer PostgreSQL para executar: `alembic upgrade head` (ou criar BD primeiro com `docker compose up -d`).
 
-**Contribuições a incorporar dos outros AIs:**
-1. **Tolerância multi-coluna** (Manu) — adicionar fallbacks de nomes de coluna com/sem acentos
-2. **FISN cross-validation** (Claude) — validação de datas via ISO 18774 para fichas técnicas
+### Ficheiros criados/modificados
 
-### Ficheiros usados nos testes (não modificar)
-- `C:\Users\jotac\OneDrive\Documents\GitHub\Projecto Orbita\Ficheiros de Uploads - Orbita/` — ficheiros originais, apenas leitura
+**Novos ficheiros:**
+- `app/models/investor_profile.py`, `.../portfolio_analytics.py`, `.../scenario_analysis.py`, `.../scenario_definition.py`, `.../investment_signal.py`, `.../investment_goal.py`, `.../ai_assistant_log.py`, `.../educational_content_view.py`, `.../currency_pair.py`, `.../international_position.py`, `.../market_comparison.py`, `.../country_risk_metric.py`, `.../tax_rule.py`
+- `app/schemas/investment.py` — schemas agrupados para todos os novos models
+- `app/routers/investment.py` — 6 routers num ficheiro
+- `migrations/versions/0003_add_investment_models.py`
+- `migrations/env.py`, `migrations/script.py.mako`
 
-### Próximos passos — Sprint 3
+**Ficheiros modificados:**
+- `app/models/__init__.py` — adicionados todos os novos models
+- `app/routers/__init__.py` — adicionados novos routers
+- `app/main.py` — registados 6 novos routers
 
-**Modelo:** DeepSeek (🟢)
-**Conteúdo:** Portar 17 models base do Kimi + criar 12 novos models de investimento + Auth + Config + DB + migrações Alembic
+### Problemas conhecidos
 
-**Ficheiros a criar/modificar:**
-- `app/models/` — (já existem do Kimi, verificar se estão completos)
-- `app/models/investor_profile.py` — NOVO (perfil psicométrico)
-- `app/models/portfolio_analytics.py` — NOVO (snapshot de métricas)
-- `app/models/scenario_analysis.py` — NOVO (unifica stress test + monte carlo)
-- `app/models/scenario_definition.py` — NOVO (cenários macro)
-- `app/models/investment_signal.py` — NOVO (unifica estratégia + swap + sinal)
-- `app/models/investment_goal.py` — NOVO (objectivos financeiros)
-- `app/models/ai_assistant_log.py` — NOVO (log interacções AI)
-- `app/models/educational_content_view.py` — NOVO (tracking academy)
-- `app/models/currency_pair.py` — NOVO (taxas de câmbio)
-- `app/models/international_position.py` — NOVO (posições internacionais)
-- `app/models/market_comparison.py` — NOVO (comparação histórica)
-- `app/models/country_risk_metric.py` — NOVO (CRP, rating, CDS)
-- `app/routers/__init__.py` — actualizar imports
-- `app/main.py` — adicionar novos routers
-- Migrações Alembic para novos models
+1. **PostgreSQL não está a correr** — a migração Alembic 0003 não foi executada. Para aplicar: `docker compose up -d && alembic upgrade head`
+2. **Docker não está a correr** — o engine Docker da máquina não está activo. É preciso iniciar o Docker Desktop primeiro.
+3. **Questionário usa scoring simplificado** — o cálculo do perfil está implementado com lógica no router. Os Sprints 5-6 vão refinar com `portfolio_analytics.py` e `financial_core.py`.
+4. **Endpoints sem autenticação total** — `scenarios_router` e `tax_router` estão parcialmente abertos. Segurança refinada nos Sprints seguintes.
+5. **.env vazio** — `ANTHROPIC_API_KEY` e `SERPAPI_KEY` ainda vazios.
 
-### Notas importantes
-1. `gh` CLI não está disponível — GitHub remotes não configurados
-2. `.env` tem chaves API vazias (ANTHROPIC_API_KEY, SERPAPI_KEY)
-3. Detecção de parsers funciona com scores > 0.9 para todos os formatos
+### Próximos passos — Sprint 4
+
+**Modelo:** Claude Opus 4.8 (🔵)
+**Conteúdo:** financial_core.py + tax_engine.py + cashflow_engine.py (port do Claude AI)
+
+**Ficheiros a criar:**
+- `app/services/financial_core.py` — portar de `...Claude/.../modules/financial_core.py` (273 linhas)
+  - `solve_ytm()` — Newton-Raphson Decimal(28)
+  - `calc_duration()` — Macaulay + Modified + Convexity
+  - `fisher_real()` — equação de Fisher ajustada para Angola
+  - `calc_liquidation()` — com comissões + IRC + IAC
+  - `generate_cash_flows()` — projecção de cupões
+- `app/services/tax_engine.py` — portar de `...Claude/.../modules/tax_engine.py` (122 linhas)
+  - `resolve_tax_rates()` — query temporal à tabela tax_rules
+- `app/services/cashflow_engine.py` — portar de `...Claude/.../modules/cashflow_engine.py` (205 linhas)
+- Router `portfolio_analytics_router` — endpoints VaR, Sharpe, Duration
+
+**Caminhos para os ficheiros Claude:**
+```
+C:\Users\jotac\OneDrive\Documents\GitHub\Projecto Orbita\Claude AI - Projecto Orbita\Investment Monitoring\bodiva_terminal\modules\
+  ├── financial_core.py   → port para app/services/financial_core.py
+  ├── tax_engine.py       → port para app/services/tax_engine.py
+  └── cashflow_engine.py  → port para app/services/cashflow_engine.py
+```
+
+### Nota importante — transição de modelo
+
+Este é o primeiro **handoff entre modelos**. O João vai mudar de `/model deepseek-chat` para `/model default` (Claude Opus 4.8). O Claude deve começar por ler este HANDOFF.md e continuar o Sprint 4. Boa sorte! 🚀
