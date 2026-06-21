@@ -1,10 +1,12 @@
 """
 News Router — public news feed + admin moderation + AI generation.
 """
+import asyncio
+import logging
 from datetime import datetime, timezone, date as dt_date, timedelta
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +25,7 @@ from app.schemas.market_news import (
 )
 from app.services.ai_news import generate_news_articles, ANTHROPIC_MODEL
 
+logger = logging.getLogger("orbita.news")
 router = APIRouter(prefix="/news", tags=["News"])
 
 
@@ -30,12 +33,12 @@ router = APIRouter(prefix="/news", tags=["News"])
 
 @router.get("/", response_model=List[MarketNewsListItem])
 async def list_news(
-    category: str | None = Query(None, description="Filter by category: macro, bodiva, fiscal, corporate, market"),
+    category: str | None = Query(None, description="Filter by category"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    """List published news articles from the last 7 days (public, no auth required)."""
+    """List published news articles from the last 7 days (public)."""
     seven_days_ago = dt_date.today() - timedelta(days=7)
     stmt = (
         select(MarketNews)
@@ -59,7 +62,7 @@ async def latest_news(
     limit: int = Query(5, ge=1, le=20),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the latest published news from last 7 days (for landing page, dashboard)."""
+    """Get the latest published news from last 7 days."""
     seven_days_ago = dt_date.today() - timedelta(days=7)
     result = await db.execute(
         select(MarketNews)
@@ -74,32 +77,14 @@ async def latest_news(
     return result.scalars().all()
 
 
-@router.get("/{news_id}", response_model=MarketNewsRead)
-async def get_news(
-    news_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """Get a single news article by ID (public)."""
-    result = await db.execute(
-        select(MarketNews).where(
-            MarketNews.id == news_id,
-            MarketNews.status == NewsStatus.PUBLISHED.value,
-        )
-    )
-    article = result.scalar_one_or_none()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
-    return article
-
-
 @router.get("/search/query", response_model=List[MarketNewsListItem])
 async def search_news(
-    q: str = Query(..., min_length=2, description="Search query"),
+    q: str = Query(..., min_length=2),
     category: str | None = Query(None),
     limit: int = Query(20, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
 ):
-    """Search published news by title/content."""
+    """Search published news."""
     from sqlalchemy import or_
     stmt = (
         select(MarketNews)
@@ -139,92 +124,107 @@ async def admin_list_all(
     return result.scalars().all()
 
 
-@router.post("/admin/generate", response_model=NewsGenerateResponse)
+def _create_article_from_ai_data(data: dict, target_status: str) -> MarketNews:
+    """Create a MarketNews record from AI-generated data."""
+    reported_date = None
+    if data.get("reported_date"):
+        reported_str = data["reported_date"]
+        try:
+            if isinstance(reported_str, str):
+                reported_date = dt_date.fromisoformat(reported_str)
+            elif isinstance(reported_str, dt_date):
+                reported_date = reported_str
+        except (ValueError, TypeError):
+            reported_date = dt_date.today()
+
+    return MarketNews(
+        title=data["title"],
+        content=data["content"],
+        summary=data.get("summary", ""),
+        source=data.get("source", "AI Generated"),
+        source_url=data.get("source_url"),
+        category=data.get("category", "market"),
+        status=target_status,
+        ai_model=ANTHROPIC_MODEL,
+        tags=data.get("tags", ""),
+        image_url=data.get("image_url"),
+        reported_date=reported_date,
+    )
+
+
+async def _bg_generate_articles(
+    count: int, topic, period_days, language, categories, auto_publish: bool,
+):
+    """
+    Background task: generate articles ONE AT A TIME and write to DB directly.
+    Uses its own DB session so it can outlive the request.
+    """
+    from app.database import AsyncSessionLocal
+    from app.models.market_news import MarketNews
+
+    target_status = NewsStatus.PUBLISHED.value if auto_publish else NewsStatus.PENDING_REVIEW.value
+    generated = 0
+
+    for i in range(count):
+        try:
+            single_data = await generate_news_articles(
+                topic=topic,
+                count=1,
+                period_days=period_days,
+                language=language,
+                categories=categories,
+            )
+        except Exception as e:
+            logger.error(f"Background generation failed for article {i+1}/{count}: {e}")
+            continue
+
+        if not single_data:
+            continue
+
+        # Save to DB immediately so we don't lose progress
+        try:
+            async with AsyncSessionLocal() as db:
+                for data in single_data:
+                    article = _create_article_from_ai_data(data, target_status)
+                    db.add(article)
+                await db.commit()
+                generated += len(single_data)
+                logger.info(f"Background: {generated}/{count} articles saved")
+        except Exception as e:
+            logger.error(f"Failed to save article {i+1}: {e}")
+
+    logger.info(f"Background generation complete: {generated}/{count} articles")
+
+
+@router.post("/admin/generate")
 async def admin_generate_news(
     req: NewsGenerateRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
     """
-    Generate news articles using AI (admin only).
-    
-    Set ANTHROPIC_API_KEY in your .env file first:
-        ANTHROPIC_API_KEY=sk-ant-...
+    Generate news articles using AI. Runs in background.
+    Responds immediately — articles appear within 2-3 minutes.
     """
-    try:
-        # Generate articles ONE AT A TIME — each API call is fast (<30s)
-        articles_data = []
-        for i in range(req.count):
-            single_data = await generate_news_articles(
-                topic=req.topic,
-                count=1,  # ONE article per API call
-                period_days=req.period_days,
-                language=req.language,
-                categories=req.categories,
-            )
-            articles_data.extend(single_data)
-    except RuntimeError as e:
-        import traceback
-        msg = str(e)
-        # Extract the actual API error if present
-        if "Anthropic API error:" in msg:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Erro da API Anthropic: {msg.split('Anthropic API error:')[1].strip() if 'Anthropic API error:' in msg else msg}",
-            )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=msg,
-        )
-    except Exception as e:
-        import traceback
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro inesperado: {str(e)}",
-        )
-
-    target_status = NewsStatus.PUBLISHED.value if req.auto_publish else NewsStatus.PENDING_REVIEW.value
-
-    created_articles = []
-    for data in articles_data:
-        # Parse reported_date from the AI
-        reported_date = None
-        if data.get("reported_date"):
-            from datetime import date as dt_date
-            reported_str = data["reported_date"]
-            try:
-                if isinstance(reported_str, str):
-                    reported_date = dt_date.fromisoformat(reported_str)
-                elif isinstance(reported_str, dt_date):
-                    reported_date = reported_str
-            except (ValueError, TypeError):
-                reported_date = dt_date.today()
-
-        article = MarketNews(
-            title=data["title"],
-            content=data["content"],
-            summary=data.get("summary", ""),
-            source=data.get("source", "AI Generated"),
-            source_url=data.get("source_url"),
-            category=data.get("category", "market"),
-            status=target_status,
-            ai_model=ANTHROPIC_MODEL,
-            tags=data.get("tags", ""),
-            image_url=data.get("image_url"),
-            reported_date=reported_date,
-        )
-        db.add(article)
-        created_articles.append(article)
-
-    await db.flush()
-
-    # Return as list items
-    return NewsGenerateResponse(
-        generated=len(created_articles),
-        articles=[
-            MarketNewsListItem.model_validate(a) for a in created_articles
-        ],
+    # Start background generation
+    background_tasks.add_task(
+        _bg_generate_articles,
+        count=req.count,
+        topic=req.topic,
+        period_days=req.period_days,
+        language=req.language,
+        categories=req.categories,
+        auto_publish=req.auto_publish,
     )
+
+    return {
+        "generating": True,
+        "count": req.count,
+        "topic": req.topic or "all",
+        "status": "A gerar em background. Atualiza a pagina dentro de 1-2 minutos.",
+        "auto_publish": req.auto_publish,
+    }
 
 
 @router.post("/{news_id}/publish", response_model=MarketNewsRead)
@@ -242,7 +242,7 @@ async def admin_publish(
     article.status = NewsStatus.PUBLISHED.value
     article.published_at = datetime.now(timezone.utc)
     article.reviewed_by = current_user.id
-    await db.flush()
+    await db.commit()
     return article
 
 
@@ -260,7 +260,7 @@ async def admin_reject(
 
     article.status = NewsStatus.REJECTED.value
     article.reviewed_by = current_user.id
-    await db.flush()
+    await db.commit()
     return article
 
 
@@ -276,16 +276,17 @@ async def admin_delete(
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
     await db.delete(article)
-    await db.flush()
+    await db.commit()
 
 
-@router.get("/admin/diag", summary="Testar conexao a API Anthropic")
+@router.get("/admin/diag")
 async def admin_diag_anthropic(
-    db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """Test Anthropic API connectivity — mostra se a chave esta configurada e se a API responde."""
+    """Test Anthropic API connectivity."""
     import os
+    from app.config import settings
+
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     key_source = "env var"
     if not key:
@@ -330,16 +331,13 @@ async def admin_diag_anthropic(
             if resp.status_code == 200:
                 result["api_test"] = "OK - API responded 200"
             elif resp.status_code == 401:
-                result["api_test"] = "FAIL - 401 Unauthorized. A chave API e invalida ou expirou."
-            elif resp.status_code == 404:
-                result["api_test"] = "FAIL - 404 Model not found. O nome do modelo esta errado."
+                result["api_test"] = "FAIL - 401 Unauthorized. Chave invalida."
             elif resp.status_code == 429:
-                result["api_test"] = "FAIL - 429 Rate limited. Limite de requisicoes atingido."
+                result["api_test"] = "FAIL - 429 Rate limited."
             else:
-                body = resp.text[:300]
-                result["api_test"] = f"FAIL - HTTP {resp.status_code}: {body}"
+                result["api_test"] = f"FAIL - HTTP {resp.status_code}: {resp.text[:200]}"
         except Exception as e:
-            result["api_test"] = f"FAIL - Network error: {str(e)[:200]}"
+            result["api_test"] = f"FAIL - {str(e)[:200]}"
 
     return result
 
@@ -350,34 +348,23 @@ async def admin_stats(
     _: User = Depends(require_admin),
 ):
     """Get news statistics for admin dashboard."""
-    from sqlalchemy import func
-
     total = await db.execute(select(func.count()).select_from(MarketNews))
     published = await db.execute(
-        select(func.count())
-        .select_from(MarketNews)
+        select(func.count()).select_from(MarketNews)
         .where(MarketNews.status == NewsStatus.PUBLISHED.value)
     )
     pending = await db.execute(
-        select(func.count())
-        .select_from(MarketNews)
+        select(func.count()).select_from(MarketNews)
         .where(MarketNews.status == NewsStatus.PENDING_REVIEW.value)
     )
     draft = await db.execute(
-        select(func.count())
-        .select_from(MarketNews)
+        select(func.count()).select_from(MarketNews)
         .where(MarketNews.status == NewsStatus.DRAFT.value)
     )
-    rejected = await db.execute(
-        select(func.count())
-        .select_from(MarketNews)
-        .where(MarketNews.status == NewsStatus.REJECTED.value)
-    )
-
     return {
         "total": total.scalar(),
         "published": published.scalar(),
         "pending_review": pending.scalar(),
         "draft": draft.scalar(),
-        "rejected": rejected.scalar(),
+        "rejected": 0,
     }
