@@ -152,13 +152,17 @@ async def admin_generate_news(
         ANTHROPIC_API_KEY=sk-ant-...
     """
     try:
-        articles_data = await generate_news_articles(
-            topic=req.topic,
-            count=req.count,
-            period_days=req.period_days,
-            language=req.language,
-            categories=req.categories,
-        )
+        # Generate articles ONE AT A TIME — each API call is fast (<30s)
+        articles_data = []
+        for i in range(req.count):
+            single_data = await generate_news_articles(
+                topic=req.topic,
+                count=1,  # ONE article per API call
+                period_days=req.period_days,
+                language=req.language,
+                categories=req.categories,
+            )
+            articles_data.extend(single_data)
     except RuntimeError as e:
         import traceback
         msg = str(e)
