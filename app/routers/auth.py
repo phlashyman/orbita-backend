@@ -71,6 +71,15 @@ class RegisterResponse(TokenResponse):
     user: UserRead
 
 
+class BootstrapAdminRequest(BaseModel):
+    """Payload for creating the first platform admin. Only works when users table is empty."""
+
+    name: str = Field(..., min_length=1, max_length=100)
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    family_name: str = Field("Orbita Admin", min_length=1, max_length=100)
+
+
 class LoginResponse(TokenResponse):
     """Login response includes the token **and** the authenticated user."""
 
@@ -174,6 +183,65 @@ async def register(
     # db.commit() is handled by get_db() upon successful return
 
     access_token = create_access_token(data={"sub": str(user.id)})
+
+    return RegisterResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=_user_to_read(user),
+    )
+
+
+@router.post(
+    "/bootstrap-admin",
+    response_model=RegisterResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def bootstrap_admin(
+    body: BootstrapAdminRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create the FIRST platform admin. **Only works when the users table is empty.**
+
+    Once a single user exists, this endpoint returns 403 Forbidden.
+    Use this ONCE after database creation, then never again.
+    """
+    import logging
+    from sqlalchemy import func
+
+    # Count existing users
+    result = await db.execute(select(func.count(User.id)))
+    user_count = result.scalar()
+    if user_count and user_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Bootstrap disabled: {user_count} user(s) already exist. Register normally or use an existing admin account.",
+        )
+
+    # Check for duplicate email (belt-and-suspenders)
+    existing = await db.execute(select(User).where(User.email == body.email))
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    # Create family
+    family = Family(name=body.family_name)
+    db.add(family)
+    await db.flush()
+
+    # Create ADMIN user
+    user = User(
+        family_id=family.id,
+        name=body.name,
+        email=body.email,
+        hashed_password=get_password_hash(body.password),
+        role=UserRole.ADMIN,
+    )
+    db.add(user)
+    await db.flush()
+    await db.refresh(user)
+
+    access_token = create_access_token(data={"sub": str(user.id)})
+
+    logging.getLogger("orbita").info(f"Bootstrap admin created: {user.email} (user_id={user.id}, family_id={family.id})")
 
     return RegisterResponse(
         access_token=access_token,
