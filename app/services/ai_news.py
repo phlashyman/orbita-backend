@@ -142,7 +142,7 @@ async def generate_news_articles(
     system_prompt = _NEWS_SYSTEM_PROMPT.replace("__COUNT__", str(count))
     system_prompt = system_prompt.replace("{period_days}", str(period_days))
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=120.0) as client:
         response = await client.post(
             ANTHROPIC_API_URL,
             headers={
@@ -225,7 +225,7 @@ Format as a professional newsletter with sections, bullet points, and data.
 Include specific numbers and dates where possible.
 Return as JSON: {"title": "...", "content": "...", "highlights": ["...", "..."]}"""
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=120.0) as client:
         response = await client.post(
             ANTHROPIC_API_URL,
             headers={
