@@ -75,8 +75,8 @@ Categories to cover: macro, bodiva, fiscal, corporate, market
 
 For each article, provide:
 - title: compelling headline (max 120 chars)
-- content: full article (300-500 words)
-- summary: 2-sentence summary
+- content: short article (100-150 words, 3 paragraphs max)
+- summary: 1-sentence summary
 - category: one of [macro, bodiva, fiscal, corporate, market]
 - tags: comma-separated relevant tags (e.g., "BNA,interest-rates,kwanza")
 - source: the institution or publication this would be attributed to (e.g., "BNA", "BODIVA", "Jornal de Angola", "Expansao", "Reuters Africa", "Bloomberg Africa")
@@ -152,7 +152,7 @@ async def generate_news_articles(
             },
             json={
                 "model": ANTHROPIC_MODEL,
-                "max_tokens": 8192,
+                "max_tokens": 2048,
                 "system": system_prompt,
                 "messages": [
                     {"role": "user", "content": user_prompt}
