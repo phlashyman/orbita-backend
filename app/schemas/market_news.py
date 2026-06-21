@@ -45,16 +45,17 @@ class MarketNewsListItem(BaseModel):
 
     id: UUID
     title: str
-    summary: str | None
+    content: str | None = None
+    summary: str | None = None
     source: str
-    source_url: str | None
-    category: str | None
+    source_url: str | None = None
+    category: str | None = None
     status: str
-    published_at: datetime | None
-    reported_date: date | None
-    tags: str | None
-    image_url: str | None
-    created_at: datetime
+    published_at: datetime | None = None
+    reported_date: date | None = None
+    tags: str | None = None
+    image_url: str | None = None
+    created_at: datetime | None = None
 
 
 class MarketNewsUpdate(BaseModel):

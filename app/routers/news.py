@@ -1,12 +1,11 @@
 """
 News Router — public news feed + admin moderation + AI generation.
 """
-import asyncio
 import logging
 from datetime import datetime, timezone, date as dt_date, timedelta
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -152,78 +151,52 @@ def _create_article_from_ai_data(data: dict, target_status: str) -> MarketNews:
     )
 
 
-async def _bg_generate_articles(
-    count: int, topic, period_days, language, categories, auto_publish: bool,
-):
-    """
-    Background task: generate articles ONE AT A TIME and write to DB directly.
-    Uses its own DB session so it can outlive the request.
-    """
-    from app.database import AsyncSessionLocal
-    from app.models.market_news import MarketNews
-
-    target_status = NewsStatus.PUBLISHED.value if auto_publish else NewsStatus.PENDING_REVIEW.value
-    generated = 0
-
-    for i in range(count):
-        try:
-            single_data = await generate_news_articles(
-                topic=topic,
-                count=1,
-                period_days=period_days,
-                language=language,
-                categories=categories,
-            )
-        except Exception as e:
-            logger.error(f"Background generation failed for article {i+1}/{count}: {e}")
-            continue
-
-        if not single_data:
-            continue
-
-        # Save to DB immediately so we don't lose progress
-        try:
-            async with AsyncSessionLocal() as db:
-                for data in single_data:
-                    article = _create_article_from_ai_data(data, target_status)
-                    db.add(article)
-                await db.commit()
-                generated += len(single_data)
-                logger.info(f"Background: {generated}/{count} articles saved")
-        except Exception as e:
-            logger.error(f"Failed to save article {i+1}: {e}")
-
-    logger.info(f"Background generation complete: {generated}/{count} articles")
-
-
 @router.post("/admin/generate")
 async def admin_generate_news(
     req: NewsGenerateRequest,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
     """
-    Generate news articles using AI. Runs in background.
-    Responds immediately — articles appear within 2-3 minutes.
+    Generate ONE news article using AI. Frontend calls this multiple times.
+    Each call takes ~10-15s — well under Railway's 30s timeout.
     """
-    # Start background generation
-    background_tasks.add_task(
-        _bg_generate_articles,
-        count=req.count,
-        topic=req.topic,
-        period_days=req.period_days,
-        language=req.language,
-        categories=req.categories,
-        auto_publish=req.auto_publish,
-    )
+    try:
+        articles_data = await generate_news_articles(
+            topic=req.topic,
+            count=1,
+            period_days=req.period_days,
+            language=req.language,
+            categories=req.categories,
+        )
+    except RuntimeError as e:
+        msg = str(e)
+        if "Anthropic API error:" in msg:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Erro da API Anthropic: {msg.split('Anthropic API error:')[1].strip() if 'Anthropic API error:' in msg else msg}",
+            )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+    if not articles_data:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="API devolveu zero artigos")
+
+    target_status = NewsStatus.PUBLISHED.value if req.auto_publish else NewsStatus.PENDING_REVIEW.value
+
+    created = []
+    for data in articles_data:
+        article = _create_article_from_ai_data(data, target_status)
+        db.add(article)
+        created.append(article)
+
+    await db.commit()
 
     return {
-        "generating": True,
-        "count": req.count,
-        "topic": req.topic or "all",
-        "status": "A gerar em background. Atualiza a pagina dentro de 1-2 minutos.",
-        "auto_publish": req.auto_publish,
+        "generated": len(created),
+        "article": MarketNewsListItem.model_validate(created[0]) if created else None,
+        "status": "gerado" if req.auto_publish else "pendente_revisao",
     }
 
 
