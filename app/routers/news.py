@@ -1,7 +1,7 @@
 """
 News Router — public news feed + admin moderation + AI generation.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date as dt_date, timedelta
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -35,10 +35,15 @@ async def list_news(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    """List published news articles (public, no auth required)."""
+    """List published news articles from the last 7 days (public, no auth required)."""
+    seven_days_ago = dt_date.today() - timedelta(days=7)
     stmt = (
         select(MarketNews)
         .where(MarketNews.status == NewsStatus.PUBLISHED.value)
+        .where(
+            (MarketNews.published_at >= seven_days_ago) |
+            (MarketNews.reported_date >= seven_days_ago)
+        )
         .order_by(desc(MarketNews.published_at))
         .limit(limit)
         .offset(offset)
@@ -54,10 +59,15 @@ async def latest_news(
     limit: int = Query(5, ge=1, le=20),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the latest published news (for landing page, dashboard)."""
+    """Get the latest published news from last 7 days (for landing page, dashboard)."""
+    seven_days_ago = dt_date.today() - timedelta(days=7)
     result = await db.execute(
         select(MarketNews)
         .where(MarketNews.status == NewsStatus.PUBLISHED.value)
+        .where(
+            (MarketNews.published_at >= seven_days_ago) |
+            (MarketNews.reported_date >= seven_days_ago)
+        )
         .order_by(desc(MarketNews.published_at))
         .limit(limit)
     )
@@ -159,6 +169,19 @@ async def admin_generate_news(
 
     created_articles = []
     for data in articles_data:
+        # Parse reported_date from the AI
+        reported_date = None
+        if data.get("reported_date"):
+            from datetime import date as dt_date
+            reported_str = data["reported_date"]
+            try:
+                if isinstance(reported_str, str):
+                    reported_date = dt_date.fromisoformat(reported_str)
+                elif isinstance(reported_str, dt_date):
+                    reported_date = reported_str
+            except (ValueError, TypeError):
+                reported_date = dt_date.today()
+
         article = MarketNews(
             title=data["title"],
             content=data["content"],
@@ -170,6 +193,7 @@ async def admin_generate_news(
             ai_model=ANTHROPIC_MODEL,
             tags=data.get("tags", ""),
             image_url=data.get("image_url"),
+            reported_date=reported_date,
         )
         db.add(article)
         created_articles.append(article)

@@ -119,9 +119,9 @@ Regras:
 6. Quando apropriado, explica conceitos financeiros de forma simples.
 7. O contexto atual do mercado angolano inclui:
    - IAC de 10% (Lei 14/25, OGE 2026)
-   - BNA rate aproximadamente 17%
-   - Inflacao anual aproximadamente 12-13%
-   - USD/AOA aproximadamente 650"""
+   - BNA rate (TBC) = 17.00% (corte de 200bp em Maio 2026)
+   - Inflacao anual (IPC) = 10.88% (INE, Maio 2026)
+   - USD/AOA aproximadamente 910"""
 
 SYSTEM_PROMPT_REPORT = """Eres um analista financeiro a gerar um relatorio semanal de investimento
 para um investidor angolano. O relatorio deve incluir:
@@ -212,7 +212,7 @@ def generate_weekly_report_template(
 
     lines.append("")
     lines.append("4. CONTEXTO MACRO")
-    lines.append("   BNA rate: ~17% | Inflacao: ~12.4% | USD/AOA: ~650")
+    lines.append("   BNA rate: 17.00% | Inflacao: 10.88% (Maio 2026) | USD/AOA: ~910")
     lines.append("   IAC vigente: 10% (Lei 14/25)")
     lines.append("")
     lines.append("=" * 60)

@@ -1,7 +1,7 @@
 """
 Schemas Pydantic para MarketNews.
 """
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -31,6 +31,7 @@ class MarketNewsRead(BaseModel):
     category: str | None
     status: str
     published_at: datetime | None
+    reported_date: date | None
     reviewed_by: UUID | None
     ai_model: str | None
     tags: str | None
@@ -46,9 +47,11 @@ class MarketNewsListItem(BaseModel):
     title: str
     summary: str | None
     source: str
+    source_url: str | None
     category: str | None
     status: str
     published_at: datetime | None
+    reported_date: date | None
     tags: str | None
     image_url: str | None
     created_at: datetime

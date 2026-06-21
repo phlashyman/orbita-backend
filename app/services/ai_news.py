@@ -62,11 +62,14 @@ INSTRUMENTS:
 - BTA (Bilhetes do Tesouro de Angola) — T-bills (short term)
 - Corporate bonds from Sonangol, BFA, BAI, BCH, Unitel, Total Energies Angola
 
-MACRO CONTEXT:
-- Kwanza (AOA/USD exchange rate, ~900 Kz per USD range)
-- Inflation (around 18-25% range)
-- Oil benchmark price (Angola is OPEC member, major oil producer)
-- GDP growth, fiscal deficit, debt-to-GDP ratio
+MACRO CONTEXT (as of June 2026, VERIFIED data — use these values):
+- BNA benchmark rate (TBC): 17.00% (cut 200bp from 19% in May 2026)
+- Inflation (IPC, INE Angola): 10.88% (May 2026 YoY, trending down)
+- Kwanza (AOA/USD): ~910 Kz per USD
+- Oil benchmark price (Brent): ~$75/barrel
+- GDP growth 2026F: ~3.1% (IMF)
+- IAC tax on bonds: 10% (Lei 14/25 effective 1 Jan 2026)
+- BODIVA: 5 listed companies (BAI, BFA, ENSA, BCGA, BODIVA-SGMR)
 
 Categories to cover: macro, bodiva, fiscal, corporate, market
 
@@ -76,9 +79,13 @@ For each article, provide:
 - summary: 2-sentence summary
 - category: one of [macro, bodiva, fiscal, corporate, market]
 - tags: comma-separated relevant tags (e.g., "BNA,interest-rates,kwanza")
-- source: the institution or publication this would be attributed to (e.g., "BNA", "BODIVA", "Jornal de Angola", "Expansão", "Reuters Africa", "Bloomberg Africa")
+- source: the institution or publication this would be attributed to (e.g., "BNA", "BODIVA", "Jornal de Angola", "Expansao", "Reuters Africa", "Bloomberg Africa")
 - source_url: realistic URL for the source website (e.g., "https://www.bna.ao", "https://www.bodiva.ao")
 - image_query: 2-3 keywords for a relevant photo (e.g., "angola luanda finance", "central bank money", "stock market trading")
+- article_date: the date the news event happened / was reported (YYYY-MM-DD format). This MUST be a date within the last {period_days} days. DO NOT use future dates.
+
+CRITICAL: Use the CURRENT macro data provided above. Do NOT invent or hallucinate rates or dates.
+The BNA rate is 17.00% as of June 2026. Inflation is 10.88%. Do not use outdated figures.
 
 IMPORTANT: Return ONLY a valid JSON array. No markdown, no explanation.
 
@@ -133,6 +140,7 @@ async def generate_news_articles(
     user_prompt += "\n\nReturn ONLY valid JSON array."
 
     system_prompt = _NEWS_SYSTEM_PROMPT.replace("__COUNT__", str(count))
+    system_prompt = system_prompt.replace("{period_days}", str(period_days))
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
@@ -183,10 +191,14 @@ async def generate_news_articles(
         valid_articles = []
         for a in articles:
             if required.issubset(a.keys()):
-                # Build loremflickr image URL from image_query if provided
-                if "image_query" in a and a["image_query"] and not a.get("image_url"):
-                    query = a["image_query"].replace(" ", ",")
-                    a["image_url"] = f"https://loremflickr.com/800/400/{query}"
+                if not a.get("image_url") and a.get("image_query"):
+                    a["image_url"] = None  # Skip loremflickr — production ready
+                # Extract reported_date from article_date field
+                if "article_date" in a and a["article_date"]:
+                    a["reported_date"] = a["article_date"]
+                elif not a.get("reported_date"):
+                    from datetime import date as dt_date
+                    a["reported_date"] = dt_date.today().isoformat()
                 valid_articles.append(a)
 
         return valid_articles

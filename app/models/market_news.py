@@ -3,7 +3,7 @@ Tabela de Noticias do Mercado (AI Generated + Curated).
 Suporta workflow: DRAFT -> PENDING_REVIEW -> PUBLISHED / REJECTED.
 """
 import enum
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, Date, ForeignKey
 from app.database import Base
 from app.utils.base import BaseMixin
 
@@ -27,6 +27,7 @@ class MarketNews(Base, BaseMixin):
     category = Column(String(50), nullable=True)  # macro, bodiva, fiscal, corporate, market
     status = Column(String(30), default=NewsStatus.DRAFT.value, nullable=False)
     published_at = Column(DateTime(timezone=True), nullable=True)
+    reported_date = Column(Date, nullable=True, comment="Quando o evento noticiado ocorreu (distinto da data de geracao)")
     reviewed_by = Column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
