@@ -391,6 +391,53 @@ async def list_all_users(
     return [_user_to_read(u) for u in users]
 
 
+class PromoteToAdminRequest(BaseModel):
+    """Payload to promote a specific user to ADMIN. Only works when no admin exists."""
+
+    email: EmailStr
+
+
+@router.post("/promote-first-admin", response_model=UserRead)
+async def promote_first_admin(
+    body: PromoteToAdminRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Promote a user to ADMIN — **only works if no admin exists yet.**
+
+    Safety: once an admin exists, only existing admins can promote others
+    (via the regular admin user management endpoints).
+    """
+    import logging
+    from sqlalchemy import func
+
+    # Count existing admins
+    result = await db.execute(
+        select(func.count(User.id)).where(User.role == UserRole.ADMIN, User.deleted_at.is_(None))
+    )
+    admin_count = result.scalar() or 0
+    if admin_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Cannot promote: {admin_count} admin(s) already exist. Ask an admin to promote this user.",
+        )
+
+    # Find the user by email
+    result = await db.execute(
+        select(User).where(User.email == body.email, User.deleted_at.is_(None))
+    )
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found. Register first.")
+
+    user.role = UserRole.ADMIN
+    await db.commit()
+    await db.refresh(user)
+
+    logging.getLogger("orbita").info(f"User promoted to ADMIN: {user.email} (user_id={user.id})")
+
+    return _user_to_read(user)
+
+
 @router.delete("/admin/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete_user(
     user_id: str,
