@@ -160,9 +160,23 @@ async def admin_generate_news(
             categories=req.categories,
         )
     except RuntimeError as e:
+        import traceback
+        msg = str(e)
+        # Extract the actual API error if present
+        if "Anthropic API error:" in msg:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Erro da API Anthropic: {msg.split('Anthropic API error:')[1].strip() if 'Anthropic API error:' in msg else msg}",
+            )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(e),
+            detail=msg,
+        )
+    except Exception as e:
+        import traceback
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro inesperado: {str(e)}",
         )
 
     target_status = NewsStatus.PUBLISHED.value if req.auto_publish else NewsStatus.PENDING_REVIEW.value
@@ -259,6 +273,71 @@ async def admin_delete(
         raise HTTPException(status_code=404, detail="Article not found")
     await db.delete(article)
     await db.flush()
+
+
+@router.get("/admin/diag", summary="Testar conexao a API Anthropic")
+async def admin_diag_anthropic(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Test Anthropic API connectivity — mostra se a chave esta configurada e se a API responde."""
+    import os
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    key_source = "env var"
+    if not key:
+        key = getattr(settings, "anthropic_api_key", "")
+        key_source = "settings"
+    if not key:
+        secret_path = "/etc/secrets/anthropic_api_key"
+        if os.path.exists(secret_path):
+            with open(secret_path, "r") as f:
+                key = f.read().strip()
+            key_source = "secret file"
+
+    masked = ""
+    if key:
+        masked = key[:10] + "..." + key[-4:] if len(key) > 15 else "***"
+
+    result = {
+        "key_configured": bool(key),
+        "key_source": key_source,
+        "key_masked": masked,
+        "model": ANTHROPIC_MODEL,
+        "api_test": "skipped",
+    }
+
+    if key:
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": "claude-haiku-4-5-20251001",
+                        "max_tokens": 10,
+                        "messages": [{"role": "user", "content": "Hello"}],
+                    },
+                )
+            if resp.status_code == 200:
+                result["api_test"] = "OK - API responded 200"
+            elif resp.status_code == 401:
+                result["api_test"] = "FAIL - 401 Unauthorized. A chave API e invalida ou expirou."
+            elif resp.status_code == 404:
+                result["api_test"] = "FAIL - 404 Model not found. O nome do modelo esta errado."
+            elif resp.status_code == 429:
+                result["api_test"] = "FAIL - 429 Rate limited. Limite de requisicoes atingido."
+            else:
+                body = resp.text[:300]
+                result["api_test"] = f"FAIL - HTTP {resp.status_code}: {body}"
+        except Exception as e:
+            result["api_test"] = f"FAIL - Network error: {str(e)[:200]}"
+
+    return result
 
 
 @router.get("/admin/stats")
