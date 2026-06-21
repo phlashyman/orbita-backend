@@ -438,6 +438,39 @@ async def promote_first_admin(
     return _user_to_read(user)
 
 
+@router.delete("/reset-all-users", status_code=status.HTTP_200_OK)
+async def reset_all_users(
+    db: AsyncSession = Depends(get_db),
+):
+    """DELETE all users and families. Only works if no ADMIN exists.
+
+    WARNING: Destructive. Use only during initial setup to start fresh."""
+    import logging
+    from sqlalchemy import func, delete as sa_delete
+
+    result = await db.execute(
+        select(func.count(User.id)).where(User.role == UserRole.ADMIN, User.deleted_at.is_(None))
+    )
+    admin_count = result.scalar() or 0
+    if admin_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: {admin_count} admin(s) exist. Only an admin can delete users.",
+        )
+
+    result = await db.execute(select(func.count(User.id)))
+    user_count = result.scalar() or 0
+
+    await db.execute(sa_delete(User))
+    from app.models.family import Family
+    await db.execute(sa_delete(Family))
+    await db.commit()
+
+    logging.getLogger("orbita").warning(f"All users and families deleted ({user_count} users).")
+
+    return {"status": "reset", "users_deleted": user_count}
+
+
 @router.delete("/admin/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete_user(
     user_id: str,
