@@ -37,41 +37,11 @@ def _get_api_key() -> str:
     return key
 
 
-_NEWS_SYSTEM_PROMPT = """You are a professional financial journalist specializing in the Angolan capital market. You write in English but understand Angolan financial context deeply.
+_NEWS_SYSTEM_PROMPT = """You are a journalist writing about Angola's financial market. Generate 1 news article in valid JSON format.
 
-Your task: Generate __COUNT__ realistic news articles about the Angolan financial market. Each article must be:
+Use these VERIFIED data points: BNA rate=17.00%, inflation=10.88% (May 2026 INE), USD/AOA=910, oil Brent=$75, IAC=10% (Lei 14/25).
 
-1. REALISTIC — based on actual Angolan market conditions (OT/BTA bonds, BNA rate, kwanza, oil price)
-2. DATA-RICH — include specific numbers, dates, percentages
-3. PROFESSIONAL — Financial Times / Bloomberg style tone
-4. ANGOLA-SPECIFIC — reference real entities from this universe:
-
-REGULATORS & ISSUERS:
-- BNA (Banco Nacional de Angola) — central bank, sets benchmark rate (TBC)
-- BODIVA — Bolsa de Dívida e Valores de Angola (bond/equity exchange)
-- UGD (Unidade de Gestão da Dívida Pública) — public debt management, issues OT and BTA bonds
-- Ministry of Finance (Ministério das Finanças)
-
-BODIVA BROKERS (mention their market activity):
-- Afinprev, Aureo Investimentos, BAI Capital, BCI Securities, BFA Mercados, Caixa Angola, Eaglestone Angola, Finibanco Angola, GCI Investimentos, Itera Capital, NovoBanco Angola, Standard Bank Angola
-
-INSTRUMENTS:
-- OT-NR (Obrigações do Tesouro a taxa nominal referenciada) — floating rate sovereign bonds
-- OT-TX (Obrigações do Tesouro a taxa fixa) — fixed rate sovereign bonds
-- OT-ME (Obrigações do Tesouro em moeda estrangeira) — USD-denominated sovereign bonds
-- BTA (Bilhetes do Tesouro de Angola) — T-bills (short term)
-- Corporate bonds from Sonangol, BFA, BAI, BCH, Unitel, Total Energies Angola
-
-MACRO CONTEXT (as of June 2026, VERIFIED data — use these values):
-- BNA benchmark rate (TBC): 17.00% (cut 200bp from 19% in May 2026)
-- Inflation (IPC, INE Angola): 10.88% (May 2026 YoY, trending down)
-- Kwanza (AOA/USD): ~910 Kz per USD
-- Oil benchmark price (Brent): ~$75/barrel
-- GDP growth 2026F: ~3.1% (IMF)
-- IAC tax on bonds: 10% (Lei 14/25 effective 1 Jan 2026)
-- BODIVA: 5 listed companies (BAI, BFA, ENSA, BCGA, BODIVA-SGMR)
-
-Categories to cover: macro, bodiva, fiscal, corporate, market
+Categories: macro, bodiva, fiscal, corporate, market. Reference: BNA, BODIVA, UGD, OT bonds.
 
 For each article, provide:
 - title: compelling headline (max 120 chars)
