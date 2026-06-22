@@ -15,12 +15,17 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 def _get_serpapi_key() -> str:
-    # Check multiple env var names (Render dashboard may use either)
+    # 1. Environment variable (set via Railway → Variables)
     for env_name in ("SERPAPI_KEY", "SerpAPI", "SERPAPI"):
         key = os.environ.get(env_name, "")
         if key:
             return key
-    # Check multiple secret file names
+    # 2. Pydantic settings (reads from .env / env vars)
+    from app.config import settings
+    key = getattr(settings, "serpapi_key", "")
+    if key:
+        return key
+    # 3. Railway Secret File at /etc/secrets/serpapi_key
     for secret_name in ("serpapi_key", "SerpAPI", "serpapi"):
         try:
             with open(f"/etc/secrets/{secret_name}") as f:
