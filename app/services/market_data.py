@@ -77,16 +77,30 @@ async def _fetch(params: dict) -> dict:
 
 def _parse_market_item(item: dict) -> dict:
     """Normalise a single market/index/stock item from SerpAPI."""
+    pm = item.get("price_movement") or {}
     return {
         "ticker": item.get("stock", item.get("name", "")),
-        "name": item.get("full_name", item.get("name", "")),
+        "name": item.get("name", item.get("stock", "")),
         "price": item.get("price"),
-        "change": item.get("price_movement", {}).get("value"),
-        "change_pct": item.get("price_movement", {}).get("percentage"),
-        "movement": item.get("price_movement", {}).get("movement"),  # "Up" | "Down"
+        "change": pm.get("value"),
+        "change_pct": pm.get("percentage"),
+        "movement": pm.get("movement"),  # "Up" | "Down"
         "currency": item.get("currency", ""),
         "exchange": item.get("extracted_exchange", ""),
     }
+
+def _extract_market_items(data: dict) -> list[dict]:
+    """Extract items from SerpAPI response. The response uses 'markets' (not 'market_trends')
+    which is a dict of market_name -> array_of_items."""
+    items = []
+    # SerpAPI google_finance_markets returns 'markets': { 'us': [...], 'europe': [...], ... }
+    markets = data.get("markets") or {}
+    if isinstance(markets, dict):
+        for region, region_items in markets.items():
+            if isinstance(region_items, list):
+                for item in region_items:
+                    items.append(_parse_market_item(item))
+    return items
 
 
 # ---------------------------------------------------------------------------
@@ -98,13 +112,8 @@ async def get_indices() -> list[dict]:
     cached = _cached("indices")
     if cached is not None:
         return cached
-
     data = await _fetch({"engine": "google_finance_markets", "trend": "indexes", "hl": "en"})
-    items = []
-    for section in data.get("market_trends", []):
-        for item in section.get("results", []):
-            items.append(_parse_market_item(item))
-
+    items = _extract_market_items(data)
     _store("indices", items)
     return items
 
@@ -114,13 +123,8 @@ async def get_currencies() -> list[dict]:
     cached = _cached("currencies")
     if cached is not None:
         return cached
-
     data = await _fetch({"engine": "google_finance_markets", "trend": "currencies", "hl": "en"})
-    items = []
-    for section in data.get("market_trends", []):
-        for item in section.get("results", []):
-            items.append(_parse_market_item(item))
-
+    items = _extract_market_items(data)
     _store("currencies", items)
     return items
 
@@ -129,18 +133,12 @@ async def get_movers(trend: str = "most-active") -> list[dict]:
     """Top movers: most-active | gainers | losers."""
     if trend not in ("most-active", "gainers", "losers"):
         trend = "most-active"
-
     cache_key = f"movers_{trend}"
     cached = _cached(cache_key)
     if cached is not None:
         return cached
-
     data = await _fetch({"engine": "google_finance_markets", "trend": trend, "hl": "en"})
-    items = []
-    for section in data.get("market_trends", []):
-        for item in section.get("results", []):
-            items.append(_parse_market_item(item))
-
+    items = _extract_market_items(data)
     _store(cache_key, items)
     return items
 
