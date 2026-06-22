@@ -6,7 +6,7 @@ from datetime import datetime, timezone, date as dt_date, timedelta
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -14,13 +14,9 @@ from app.dependencies.auth import get_current_active_user, require_admin
 from app.models.market_news import MarketNews, NewsStatus
 from app.models.user import User
 from app.schemas.market_news import (
-    MarketNewsCreate,
     MarketNewsRead,
     MarketNewsListItem,
-    MarketNewsUpdate,
-    MarketNewsStatusUpdate,
     NewsGenerateRequest,
-    NewsGenerateResponse,
 )
 from app.services.ai_news import generate_news_articles, ANTHROPIC_MODEL
 
@@ -37,15 +33,10 @@ async def list_news(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    """List published news articles from the last 7 days (public)."""
-    seven_days_ago = dt_date.today() - timedelta(days=7)
+    """List published news articles (public, no auth required)."""
     stmt = (
         select(MarketNews)
         .where(MarketNews.status == NewsStatus.PUBLISHED.value)
-        .where(
-            (MarketNews.published_at >= seven_days_ago) |
-            (MarketNews.reported_date >= seven_days_ago)
-        )
         .order_by(desc(MarketNews.published_at))
         .limit(limit)
         .offset(offset)
@@ -61,15 +52,10 @@ async def latest_news(
     limit: int = Query(5, ge=1, le=20),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the latest published news from last 7 days."""
-    seven_days_ago = dt_date.today() - timedelta(days=7)
+    """Get the latest published news (for landing page, dashboard)."""
     result = await db.execute(
         select(MarketNews)
         .where(MarketNews.status == NewsStatus.PUBLISHED.value)
-        .where(
-            (MarketNews.published_at >= seven_days_ago) |
-            (MarketNews.reported_date >= seven_days_ago)
-        )
         .order_by(desc(MarketNews.published_at))
         .limit(limit)
     )
@@ -146,7 +132,7 @@ def _create_article_from_ai_data(data: dict, target_status: str) -> MarketNews:
         status=target_status,
         ai_model=ANTHROPIC_MODEL,
         tags=data.get("tags", ""),
-        image_url=data.get("image_url"),
+        image_url=None,
         reported_date=reported_date,
     )
 
@@ -158,8 +144,8 @@ async def admin_generate_news(
     current_user: User = Depends(require_admin),
 ):
     """
-    Generate ONE news article using AI. Frontend calls this multiple times.
-    Each call takes ~10-15s — well under Railway's 30s timeout.
+    Generate ONE news article using AI.
+    Frontend calls this once per article — each call ~10-15s.
     """
     try:
         articles_data = await generate_news_articles(
@@ -171,12 +157,10 @@ async def admin_generate_news(
         )
     except RuntimeError as e:
         msg = str(e)
-        if "Anthropic API error:" in msg:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Erro da API Anthropic: {msg.split('Anthropic API error:')[1].strip() if 'Anthropic API error:' in msg else msg}",
-            )
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY if "Anthropic API error" in msg else status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=msg,
+        )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
@@ -211,7 +195,6 @@ async def admin_publish(
     article = result.scalar_one_or_none()
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
-
     article.status = NewsStatus.PUBLISHED.value
     article.published_at = datetime.now(timezone.utc)
     article.reviewed_by = current_user.id
@@ -230,7 +213,6 @@ async def admin_reject(
     article = result.scalar_one_or_none()
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
-
     article.status = NewsStatus.REJECTED.value
     article.reviewed_by = current_user.id
     await db.commit()
@@ -330,14 +312,10 @@ async def admin_stats(
         select(func.count()).select_from(MarketNews)
         .where(MarketNews.status == NewsStatus.PENDING_REVIEW.value)
     )
-    draft = await db.execute(
-        select(func.count()).select_from(MarketNews)
-        .where(MarketNews.status == NewsStatus.DRAFT.value)
-    )
     return {
         "total": total.scalar(),
         "published": published.scalar(),
         "pending_review": pending.scalar(),
-        "draft": draft.scalar(),
+        "draft": 0,
         "rejected": 0,
     }
